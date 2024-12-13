@@ -84,23 +84,25 @@ async def autoscan(
         output_tokens=total_completion_tokens,
     )
 
-async def _process_images_async(images: List[str], model: LlmModel, transcribe_images):
+async def _process_images_async(images: List[str], model: LlmModel, transcribe_images, max_concurrent=32):
     aggregated_markdown = []
     prior_page_markdown = ""
     total_prompt_tokens = 0
     total_completion_tokens = 0
     total_cost = 0.0
 
+    semaphore = asyncio.Semaphore(max_concurrent)
     async def process_single_image(image_path):
-        try:
-            # Await the async `completion` method
-            result = await model.completion(image_path, prior_page_markdown, transcribe_images=transcribe_images)
-            if not result.page_markdown.strip():
-                raise ValueError(f"Generated markdown for image '{image_path}' is empty.")
-            return result
-        except Exception as e:
-            logging.error(f"Error processing image '{image_path}': {e}")
-            return None
+        async with semaphore:
+            try:
+                # Await the async `completion` method
+                result = await model.completion(image_path, prior_page_markdown, transcribe_images=transcribe_images)
+                if not result.page_markdown.strip():
+                    raise ValueError(f"Generated markdown for image '{image_path}' is empty.")
+                return result
+            except Exception as e:
+                logging.error(f"Error processing image '{image_path}': {e}")
+                return None
 
     tasks = [process_single_image(image) for image in images]
     results = await asyncio.gather(*tasks)
